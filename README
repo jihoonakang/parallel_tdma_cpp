@@ -1,0 +1,21 @@
+Parallel TDMA solver using cyclic reduction (CR) anc Parallel CR algorith
+
+                                                            15 Jan 2019
+                                        by Ji-Hoon Kang (jhkang@kisti.re.kr) 
+                        Korea Institute of Science and Technology Information
+
+The CR algorithm is described on Parallel Scientific Computing in C++ and MPI
+by Karniadakis and Kirby. CR algorithm removes odd rows recursively,
+so MPI processes begin to drop out after single row is left per MPI process,
+while PCR can use full parallelism. Therefore, PCR is a good solution from
+the level where single row is left per MPI process. In this implementation,
+we can choose CR or PCR algorithm from the level where each MPI process has 
+a single row.
+
+Odd-rows are removed successively and we obtain two reduced equations finally,
+from which the last-level solutions are obtained. The last-level solutions 
+are back-substituted for all rows.
+
+This solver has restrictions on input parameters in which the number of rows
+is 2^n and the number of MPI processes is 2^m, respectively, and n >= 2*m.
+
