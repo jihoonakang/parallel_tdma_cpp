@@ -87,6 +87,26 @@ void tdma_parallel :: cr_solver(double *a_mpi, double *b_mpi, double *c_mpi, dou
 }
 
 /** 
+ * @brief   Thomas-PCR solver: pThomas_forward_multiple + pcr_forward_double + pThomas_backward_multiple
+ * @param   a_mpi (input) Lower off-diagonal coeff., which is assigned to local private pointer a
+ * @param   b_mpi (input) Diagonal coeff., which is assigned to local private pointer a
+ * @param   c_mpi (input) Upper off-diagonal coeff.,, which is assigned to local private pointer a
+ * @param   r_mpi (input) RHS vector, which is assigned to local private pointer a
+ * @param   x_mpi (output) Solution vector, which is assigned to local private pointer a
+*/
+void tdma_parallel :: Thomas_pcr_solver(double *a_mpi, double *b_mpi, double *c_mpi, double *r_mpi, double *x_mpi)
+{
+    a = a_mpi;
+    b = b_mpi;
+    c = c_mpi;
+    r = r_mpi;
+    x = x_mpi;
+
+    pThomas_forward_multiple_row();
+    pcr_forward_double_row();
+}
+
+/** 
  * @brief   Forward elimination of CR until a single row per MPI process remains.
  * @details After a single row per MPI process remains, PCR or CR between a single row is performed.
 */
@@ -530,6 +550,112 @@ void tdma_parallel :: pcr_forward_single_row()
         MPI_Wait(request+3, &status);
     }
 }
+/** 
+ * @brief   First phase of hybrid Thomas and PCR algorithm
+ * @detail  Forward and backward elimination to remain two equations of first and last rows for each MPI processes
+*/
+void tdma_parallel :: pThomas_forward_multiple_row()
+{
+    int i;
+    double alpha, beta;
+
+    for(i=3;i<=n_mpi;i++) {
+        alpha = - a[i] / b[i-1];
+        a[i]  = alpha * a[i-1];
+        b[i] += alpha * c[i-1];
+        r[i] += alpha * r[i-1];
+    }
+    for(i=n_mpi-2;i>=1;i--) {
+        beta  = - c[i] / b[i+1];
+        c[i]  = beta * c[i+1];
+        r[i] += beta * r[i+1];
+        if(i==1) {
+            b[1] += beta * a[2];
+        }
+        else
+        {
+            a[i] += beta * a[i+1];
+        }
+        
+    }
+}
+
+void tdma_parallel :: pcr_forward_double_row()
+{
+    int i, ip, in;
+    double alpha, gamma;
+    double sbuf[4], rbuf[4];
+
+    MPI_Status status, status1;
+    MPI_Request request[2];
+
+    /// Cyclic reduction until single row remains per MPI process.
+    /// First row of next rank is sent to current rank at the row of n_mpi+1 for reduction.
+    if(myrank<nprocs-1) {
+        MPI_Irecv(rbuf, 4, MPI_DOUBLE, myrank+1, 0, MPI_COMM_WORLD, request);
+    }
+    if(myrank>0) {
+        sbuf[0] = a[1];
+        sbuf[1] = b[1];
+        sbuf[2] = c[1];
+        sbuf[3] = r[1];
+        MPI_Isend(sbuf, 4, MPI_DOUBLE, myrank-1, 0, MPI_COMM_WORLD, request+1);
+    }
+    if(myrank<nprocs-1) {
+        MPI_Wait(request, &status1);
+        a[n_mpi+1] = rbuf[0];
+        b[n_mpi+1] = rbuf[1];
+        c[n_mpi+1] = rbuf[2];
+        r[n_mpi+1] = rbuf[3];
+    }
+
+    /// Every first row are reduced to the last row (n_mpi) in each MPI rank.
+    i = n_mpi;
+    ip = 1;
+    in = i + 1;
+    alpha = -a[i] / b[ip];
+    gamma = -c[i] / b[in];
+
+    b[i] += (alpha * c[ip] + gamma * a[in]);
+    a[i] = alpha * a[ip];
+    c[i] = gamma * c[in];
+    r[i] += (alpha * r[ip] + gamma * r[in]);
+    
+    if(myrank>0) {
+        MPI_Wait(request+1, &status);
+    }
+
+    /// Solution of last row in each MPI rank is obtained in pcr_forward_single_row().
+    pcr_forward_single_row();
+
+    /// Solution of first row in each MPI rank.
+    if(myrank>0) {
+        MPI_Irecv(x,       1, MPI_DOUBLE, myrank-1, 100, MPI_COMM_WORLD, request);
+    }
+    if(myrank<nprocs-1) {
+        MPI_Isend(x+n_mpi, 1, MPI_DOUBLE, myrank+1, 100, MPI_COMM_WORLD, request+1);
+    }
+    if(myrank>0) {
+        MPI_Wait(request, &status);
+    }
+    i = 1;
+    ip = 0;
+    in = n_mpi;
+    x[1] = r[1]-c[1]*x[n_mpi]-a[1]*x[0];
+    x[1] = x[1]/b[1];
+
+    /// Solution of other rows in each MPI rank.
+    for(i=2;i<n_mpi;i++) {
+        x[i] = r[i]-c[i]*x[n_mpi]-a[i]*x[1];
+        x[i] = x[i]/b[i];
+    }
+
+    if(myrank<nprocs-1) {
+        MPI_Wait(request+1, &status);
+    }
+
+}
+
 /** 
  * @brief   Solution check
  * @param   *a_ver Coefficients of a with original values

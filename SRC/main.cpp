@@ -18,7 +18,7 @@
 
 using namespace std;
 
-const int n = 128*128;
+const int n = 64;
 
 int main(int argc, char *argv[])
 {
@@ -54,9 +54,9 @@ int main(int argc, char *argv[])
     }
 
     for(i=1;i<n_mpi+1;i++) {
-        a_mpi[i] = 1.0; //+0.01*(i+myrank*n_mpi);
-        c_mpi[i] = 1.0; //+0.02*(i+myrank*n_mpi);
-        b_mpi[i] = -(a_mpi[i]+c_mpi[i])-0.1;//-0.02*(i+myrank*n_mpi)*(i+myrank*n_mpi);
+        a_mpi[i] = 1.0; +0.01*(i+myrank*n_mpi);
+        c_mpi[i] = 1.0; +0.02*(i+myrank*n_mpi);
+        b_mpi[i] = -(a_mpi[i]+c_mpi[i])-0.1-0.02*(i+myrank*n_mpi)*(i+myrank*n_mpi);
         r_mpi[i] = (double)(i-1+myrank*n_mpi);
         a_ver[i] = a_mpi[i];
         b_ver[i] = b_mpi[i];
@@ -65,7 +65,8 @@ int main(int argc, char *argv[])
     }
 
     tdma.setup(n, nprocs, myrank);
-    tdma.cr_pcr_solver(a_mpi,b_mpi,c_mpi,r_mpi,x_mpi);
+//    tdma.cr_pcr_solver(a_mpi,b_mpi,c_mpi,r_mpi,x_mpi);
+    tdma.Thomas_pcr_solver(a_mpi,b_mpi,c_mpi,r_mpi,x_mpi);
     tdma.verify_solution(a_ver,b_ver,c_ver,r_ver,x_mpi);
 
     delete[] x_mpi;
