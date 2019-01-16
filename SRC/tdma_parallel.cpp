@@ -1,5 +1,6 @@
 /**
- * @brief       Parallel TDMA solver using cyclic reduction (CR) anc Parallel CR algorithm.
+ * @brief       Parallel tri-diagonal matrix solver using cyclic reduction (CR), parallel CR (PCR),
+ *              and Thomas+PCR hybrid algorithm
  * @details     The CR algorithm is described on Parallel Scientific Computing in C++ and MPI
  *              by Karniadakis and Kirby. CR algorithm removes odd rows recursively,
  *              so MPI processes begin to drop out after single row is left per MPI process,
@@ -7,18 +8,18 @@
  *              the level where single row is left per MPI process. In this implementation,
  *              we can choose CR or PCR algorithm from the single-row level.
  *              Odd-rows are removed successively and we obtain two reduced equations finally.
- *              Obtained solutions from 2x2 matrix equations are back-substituted. 
+ *              Obtained solutions from 2x2 matrix equations are used to obtain other unknowns.
+ *              Hybrid Thomas-PCR algorithm is from the work of Laszlo, Gilles and Appleyard, 
+ *              Manycore Algorithms for Batch Scalar and Block Tridiagonal Solvers, ACM TOMS, 
+ *              42, 31 (2016).
  *
  * @author      Ji-Hoon Kang (jhkang@kisti.re.kr), Korea Institute of Science and Technology Information
- * @date        15 January 2019
+ * @date        20 January 2019
  * @version     0.1
  * @par         Copyright
-                Copyright (c) 2018 by Ji-Hoon Kang. All rights reserved.
+                Copyright (c) 2019 by Ji-Hoon Kang. All rights reserved.
  * @par         License     
                 This project is release under the terms of the MIT License (see LICENSE in )
- * @todo        Parallel Thomas instead of CR for the levels of multiple rows per MPI process.
-
-
 */
 
 #include <cmath>
@@ -47,10 +48,10 @@ void tdma_parallel :: setup(int n, int np_world, int rank_world)
 /** 
  * @brief   CR-PCR solver: cr_forward_multiple + pcr_forward_single + cr_backward_multiple
  * @param   a_mpi (input) Lower off-diagonal coeff., which is assigned to local private pointer a
- * @param   b_mpi (input) Diagonal coeff., which is assigned to local private pointer a
- * @param   c_mpi (input) Upper off-diagonal coeff.,, which is assigned to local private pointer a
- * @param   r_mpi (input) RHS vector, which is assigned to local private pointer a
- * @param   x_mpi (output) Solution vector, which is assigned to local private pointer a
+ * @param   b_mpi (input) Diagonal coeff., which is assigned to local private pointer b
+ * @param   c_mpi (input) Upper off-diagonal coeff.,, which is assigned to local private pointer c
+ * @param   r_mpi (input) RHS vector, which is assigned to local private pointer r
+ * @param   x_mpi (output) Solution vector, which is assigned to local private pointer x
 */
 void tdma_parallel :: cr_pcr_solver(double *a_mpi, double *b_mpi, double *c_mpi, double *r_mpi, double *x_mpi)
 {
@@ -67,10 +68,10 @@ void tdma_parallel :: cr_pcr_solver(double *a_mpi, double *b_mpi, double *c_mpi,
 /** 
  * @brief   CR solver: cr_forward_multiple + cr_forward_single + cr_backward_single + cr_backward_multiple
  * @param   a_mpi (input) Lower off-diagonal coeff., which is assigned to local private pointer a
- * @param   b_mpi (input) Diagonal coeff., which is assigned to local private pointer a
- * @param   c_mpi (input) Upper off-diagonal coeff.,, which is assigned to local private pointer a
- * @param   r_mpi (input) RHS vector, which is assigned to local private pointer a
- * @param   x_mpi (output) Solution vector, which is assigned to local private pointer a
+ * @param   b_mpi (input) Diagonal coeff., which is assigned to local private pointer b
+ * @param   c_mpi (input) Upper off-diagonal coeff.,, which is assigned to local private pointer c
+ * @param   r_mpi (input) RHS vector, which is assigned to local private pointer r
+ * @param   x_mpi (output) Solution vector, which is assigned to local private pointer x
 */
 void tdma_parallel :: cr_solver(double *a_mpi, double *b_mpi, double *c_mpi, double *r_mpi, double *x_mpi)
 {
@@ -89,10 +90,10 @@ void tdma_parallel :: cr_solver(double *a_mpi, double *b_mpi, double *c_mpi, dou
 /** 
  * @brief   Thomas-PCR solver: pThomas_forward_multiple + pcr_forward_double + pThomas_backward_multiple
  * @param   a_mpi (input) Lower off-diagonal coeff., which is assigned to local private pointer a
- * @param   b_mpi (input) Diagonal coeff., which is assigned to local private pointer a
- * @param   c_mpi (input) Upper off-diagonal coeff.,, which is assigned to local private pointer a
- * @param   r_mpi (input) RHS vector, which is assigned to local private pointer a
- * @param   x_mpi (output) Solution vector, which is assigned to local private pointer a
+ * @param   b_mpi (input) Diagonal coeff., which is assigned to local private pointer b
+ * @param   c_mpi (input) Upper off-diagonal coeff.,, which is assigned to local private pointer c
+ * @param   r_mpi (input) RHS vector, which is assigned to local private pointer r
+ * @param   x_mpi (output) Solution vector, which is assigned to local private pointer x
 */
 void tdma_parallel :: Thomas_pcr_solver(double *a_mpi, double *b_mpi, double *c_mpi, double *r_mpi, double *x_mpi)
 {
@@ -103,7 +104,7 @@ void tdma_parallel :: Thomas_pcr_solver(double *a_mpi, double *b_mpi, double *c_
     x = x_mpi;
 
     pThomas_forward_multiple_row();
-    pcr_forward_double_row();
+    pcr_double_row_substitution();
 }
 
 /** 
@@ -576,11 +577,16 @@ void tdma_parallel :: pThomas_forward_multiple_row()
         {
             a[i] += beta * a[i+1];
         }
-        
     }
 }
 
-void tdma_parallel :: pcr_forward_double_row()
+/** 
+ * @brief   PCR solver for two equations per each MPI process
+ * @detail  Forward CR to remain a single equation per each MPI process.
+ *          PCR solver for single row is, then, executed.
+ *          Substitution is also performed to obtain every solution.
+*/
+void tdma_parallel :: pcr_double_row_substitution()
 {
     int i, ip, in;
     double alpha, gamma;
@@ -644,16 +650,14 @@ void tdma_parallel :: pcr_forward_double_row()
     x[1] = r[1]-c[1]*x[n_mpi]-a[1]*x[0];
     x[1] = x[1]/b[1];
 
-    /// Solution of other rows in each MPI rank.
-    for(i=2;i<n_mpi;i++) {
-        x[i] = r[i]-c[i]*x[n_mpi]-a[i]*x[1];
-        x[i] = x[i]/b[i];
-    }
-
     if(myrank<nprocs-1) {
         MPI_Wait(request+1, &status);
     }
-
+    /// Solution of other rows in each MPI rank.
+    for(int i=2;i<n_mpi;i++) {
+        x[i] = r[i]-c[i]*x[n_mpi]-a[i]*x[1];
+        x[i] = x[i]/b[i];
+    }
 }
 
 /** 

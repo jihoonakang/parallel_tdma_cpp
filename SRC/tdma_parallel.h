@@ -2,7 +2,8 @@
 #define TDMA_PARALLEL_H
 
 /**
- * @brief       Parallel TDMA solver using cyclic reduction (CR) anc Parallel CR algorithm.
+ * @brief       Parallel tri-diagonal matrix solver using cyclic reduction (CR), parallel CR (PCR),
+ *              and Thomas+PCR hybrid algorithm
  * @details     The CR algorithm is described on Parallel Scientific Computing in C++ and MPI
  *              by Karniadakis and Kirby. CR algorithm removes odd rows recursively,
  *              so MPI processes begin to drop out after single row is left per MPI process,
@@ -10,18 +11,18 @@
  *              the level where single row is left per MPI process. In this implementation,
  *              we can choose CR or PCR algorithm from the single-row level.
  *              Odd-rows are removed successively and we obtain two reduced equations finally.
- *              Obtained solutions from 2x2 matrix equations are back-substituted. 
+ *              Obtained solutions from 2x2 matrix equations are used to obtain other unknowns.
+ *              Hybrid Thomas-PCR algorithm is from the work of Laszlo, Gilles and Appleyard, 
+ *              Manycore Algorithms for Batch Scalar and Block Tridiagonal Solvers, ACM TOMS, 
+ *              42, 31 (2016).
  *
  * @author      Ji-Hoon Kang (jhkang@kisti.re.kr), Korea Institute of Science and Technology Information
- * @date        15 January 2019
+ * @date        20 January 2019
  * @version     0.1
  * @par         Copyright
                 Copyright (c) 2019 by Ji-Hoon Kang. All rights reserved.
  * @par         License     
                 This project is release under the terms of the MIT License (see LICENSE in )
- * @todo        Parallel Thomas instead of CR for the levels of multiple rows per MPI process.
-
-
 */
 
 class tdma_parallel {
@@ -54,9 +55,7 @@ class tdma_parallel {
         void pcr_forward_single_row();
 
         void pThomas_forward_multiple_row();
-        /// Not implemeted yet. 
-        void pThomas_backward_multiple_row();
-        void pcr_forward_double_row();
+        void pcr_double_row_substitution();
 
     public :
 

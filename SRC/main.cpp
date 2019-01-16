@@ -18,7 +18,7 @@
 
 using namespace std;
 
-const int n = 64;
+const int n = 32;
 
 int main(int argc, char *argv[])
 {
