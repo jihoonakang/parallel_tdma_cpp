@@ -53,10 +53,10 @@ class tdma_parallel {
         void cr_backward_single_row();
         void pcr_forward_single_row();
 
-        /// Not implemeted yet. 
         void pThomas_forward_multiple_row();
         /// Not implemeted yet. 
         void pThomas_backward_multiple_row();
+        void pcr_forward_double_row();
 
     public :
 
@@ -66,6 +66,7 @@ class tdma_parallel {
         void setup(int n, int np_world, int rank_world);
         void cr_solver    (double *a_mpi, double *b_mpi, double *c_mpi, double *r_mpi, double *x_mpi);
         void cr_pcr_solver(double *a_mpi, double *b_mpi, double *c_mpi, double *r_mpi, double *x_mpi);
+        void Thomas_pcr_solver(double *a_mpi, double *b_mpi, double *c_mpi, double *r_mpi, double *x_mpi);
         void verify_solution(double *a_ver, double *b_ver, double *c_ver, double *r_ver, double *x_sol);
 
 };
